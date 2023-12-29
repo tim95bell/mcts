@@ -20,13 +20,21 @@ namespace mcts {
 
     enum class Cell {
         Empty,
-        X,
-        O
+        O,
+        X
+    };
+
+    enum class GameEnd {
+        None,
+        Draw,
+        OWin,
+        XWin
     };
 
     struct Board {
         Player next_turn;
         Cell cell[3][3];
+        GameEnd game_end;
     };
 
     struct State {
@@ -59,6 +67,8 @@ namespace mcts {
     static const Color cell_color{120, 140, 170, 255};
     static const Color background_color{200, 215, 230, 255};
     static const Color piece_color = background_color;
+    static const Color win_color{50, 150, 50, 255};
+    static const Color draw_color{150, 150, 50, 255};
 
 #if 0
     struct Node {
@@ -158,6 +168,19 @@ namespace mcts {
         }
     }
 
+    void draw_game_end(const State& state) {
+        const float margin = state.board_top_left_x * 0.1f;
+        const float size = state.board_top_left_x * 0.8;
+        if (state.board.game_end == GameEnd::OWin) {
+            draw_o(window_width - margin - size, margin, size, win_color);
+        } else if (state.board.game_end == GameEnd::XWin) {
+            draw_x(window_width - margin - size, margin, size, win_color);
+        } else if (state.board.game_end == GameEnd::Draw) {
+            draw_o(window_width - margin - size, margin, size, draw_color);
+            draw_x(window_width - margin - size, margin, size, draw_color);
+        }
+    }
+
     Coordinate get_cell_for_screen_pos(const State& state, Vector2 pos) {
         for (Coordinate::Type r = 0; r < 3; ++r) {
             for (Coordinate::Type c = 0; c < 3; ++c) {
@@ -181,6 +204,54 @@ namespace mcts {
         board.cell[coord.r][coord.c] = get_cell(p);
     }
 
+    GameEnd detect_win(const Board& board) {
+        // rows
+        for (U8 r = 0; r < 3; ++r) {
+            const Cell cell = get_cell(board, Coordinate{r, 0});
+            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{r, 1}) && cell == get_cell(board, Coordinate{r, 2})) {
+                assert(cell == Cell::O || cell == Cell::X);
+                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
+            }
+        }
+
+        // cols
+        for (U8 c = 0; c < 3; ++c) {
+            const Cell cell = get_cell(board, Coordinate{0, c});
+            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, c}) && cell == get_cell(board, Coordinate{2, c})) {
+                assert(cell == Cell::O || cell == Cell::X);
+                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
+            }
+        }
+
+        // diagonal 1
+        {
+            const Cell cell = get_cell(board, Coordinate{0, 0});
+            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, 1}) && cell == get_cell(board, Coordinate{2, 2})) {
+                assert(cell == Cell::O || cell == Cell::X);
+                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
+            }
+        }
+
+        // diagonal 2
+        {
+            const Cell cell = get_cell(board, Coordinate{0, 2});
+            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, 1}) && cell == get_cell(board, Coordinate{2, 0})) {
+                assert(cell == Cell::O || cell == Cell::X);
+                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
+            }
+        }
+
+        for (U8 r = 0; r < 3; ++r) {
+            for (U8 c = 0; c < 3; ++c) {
+                if (get_cell(board, Coordinate(r, c)) == Cell::Empty) {
+                    return GameEnd::None;
+                }
+            }
+        }
+
+        return GameEnd::Draw;
+    }
+
     void play_move(Board& board, Coordinate coord) {
         if (get_cell(board, coord) == Cell::Empty) {
             set_cell(board, coord, board.next_turn);
@@ -190,6 +261,8 @@ namespace mcts {
                 board.next_turn = Player::O;
             }
         }
+
+        board.game_end = detect_win(board);
     }
 
     bool is_valid(Coordinate coord) {
@@ -210,21 +283,17 @@ int main() {
 
     while (!WindowShouldClose()) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            const Vector2 pos = GetMousePosition();
-            const Coordinate coord = get_cell_for_screen_pos(state, pos);
-            if (is_valid(coord)) {
-                play_move(state.board, coord);
+            if (state.board.game_end == GameEnd::None) {
+                const Vector2 pos = GetMousePosition();
+                const Coordinate coord = get_cell_for_screen_pos(state, pos);
+                if (is_valid(coord)) {
+                    play_move(state.board, coord);
+                }
             }
         }
 
         BeginDrawing();
         {
-            //void DrawRing(Vector2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color);
-            //void DrawLine(int startPosX, int startPosY, int endPosX, int endPosY, Color color);                // Draw a line
-            //void DrawLineV(Vector2 startPos, Vector2 endPos, Color color);                                     // Draw a line (using gl lines)
-            //void DrawLineEx(Vector2 startPos, Vector2 endPos, float thick, Color color);       
-
-
             ClearBackground(background_color);
 
             for (Coordinate::Type r = 0; r < 3; ++r) {
@@ -234,6 +303,7 @@ int main() {
             }
 
             draw_next_turn_player(state);
+            draw_game_end(state);
         }
         EndDrawing();
     }
