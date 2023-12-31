@@ -66,9 +66,11 @@ namespace mcts {
 
     static constexpr U32 window_width = 640;
     static constexpr U32 window_height = 480;
-    static constexpr U32 board_size = window_width < window_height ? window_width : window_height;
+    static constexpr U32 smallest_dimension = (window_width < window_height ? window_width : window_height);
+    static constexpr U32 margin = smallest_dimension * 0.05;
+    static constexpr U32 board_size = smallest_dimension - margin * 2;
     static constexpr U32 cell_margin = (board_size / 3) * 0.05;
-    static constexpr U32 cell_size = (board_size - cell_margin * 4) / 3;
+    static constexpr U32 cell_size = (board_size - cell_margin * 2) / 3;
     static const Color cell_color{120, 140, 170, 255};
     static const Color background_color{200, 215, 230, 255};
     static const Color piece_color = background_color;
@@ -117,8 +119,8 @@ namespace mcts {
 
     Vector2 get_cell_screen_pos(const State& state, Coordinate coord) {
         return Vector2{
-            (float)state.board_top_left_x + cell_margin + coord.c * (cell_size + cell_margin),
-            (float)state.board_top_left_y + cell_margin + coord.r * (cell_size + cell_margin)
+            (float)state.board_top_left_x + coord.c * (cell_size + cell_margin),
+            (float)state.board_top_left_y + coord.r * (cell_size + cell_margin)
         };
     }
 
@@ -133,8 +135,9 @@ namespace mcts {
     }
 
     void draw_x(float x, float y, float size, Color color = piece_color) {
-        DrawLineEx(Vector2{x, y}, Vector2{x + size, y + size}, size / 5.0f, color);
-        DrawLineEx(Vector2{x + size, y}, Vector2{x, y + size}, size / 5.0f, color);
+        float margin = size * 0.1;
+        DrawLineEx(Vector2{x + margin, y + margin}, Vector2{x + size - margin, y + size - margin}, size / 5.0f, color);
+        DrawLineEx(Vector2{x + size - margin, y + margin}, Vector2{x + margin, y + size - margin}, size / 5.0f, color);
     }
 
     void draw_x(const State& state, Coordinate coord, Color color = piece_color) {
@@ -164,12 +167,12 @@ namespace mcts {
     }
 
     void draw_next_turn_player(const State& state) {
-        const float margin = state.board_top_left_x * 0.1f;
+        const float x_margin = state.board_top_left_x * 0.1f;
         const float size = state.board_top_left_x * 0.8;
         if (state.board.next_turn == Player::O) {
-            draw_o(margin, margin, size, cell_color);
+            draw_o(x_margin, margin, size, cell_color);
         } else {
-            draw_x(margin, margin, size, cell_color);
+            draw_x(x_margin, margin, size, cell_color);
         }
     }
 
@@ -184,6 +187,61 @@ namespace mcts {
         } else if (state.board.game_end == GameEnd::Draw) {
             draw_o(margin, y, size, draw_color);
             draw_x(margin, y, size, draw_color);
+        }
+    }
+
+    U32 min(U32 a, U32 b) {
+        return a < b ? a : b;
+    }
+
+    U32 max(U32 a, U32 b) {
+        return a > b ? a : b;
+    }
+
+    void draw_history(const Cell board[3][3], Coordinate coord, float x, float y, float size, Color cell_color) {
+        const U32 margin = max((size / 3.0f) * 0.05f, 1);
+        const U32 cell_size = (size - margin * 2.0f) / 3.0f;
+        const Color not_most_recent_move_cell_color{cell_color.r, cell_color.g, cell_color.b, 100};
+        for (U32 r = 0; r < 3; ++r) {
+            for (U32 c = 0; c < 3; ++c) {
+                const float cell_x = x + c * (cell_size + margin);
+                const float cell_y = y + r * (cell_size + margin);
+                const Color color = coord.r == r && coord.c == c ? cell_color : not_most_recent_move_cell_color;
+                DrawRectangle(cell_x, cell_y, cell_size, cell_size, color);
+                const Cell cell = board[r][c];
+                U32 margin = cell_size * 0.1;
+                if (cell == Cell::O) {
+                    draw_o(cell_x + margin, cell_y + margin, cell_size - (margin * 2), piece_color);
+                } else if (cell == Cell::X) {
+                    draw_x(cell_x + margin, cell_y + margin, cell_size - (margin * 2), piece_color);
+                }
+            }
+        }
+    }
+
+    Player nott(Player p) {
+        return p == Player::O ? Player::X : Player::O;
+    }
+
+    void draw_history(const State& state) {
+        const U32 y = margin;
+        const U32 height = window_height - margin * 2;
+        const U32 item_margin = height * 0.012;
+        const U32 item_height = (height - item_margin * 8) / 9;
+        const U32 min_x_margin = state.board_top_left_x * 0.05;
+        const U32 max_width = state.board_top_left_x - min_x_margin * 2;
+        const U32 item_width = min(max_width, item_height);
+        const U32 x_margin = (state.board_top_left_x - item_width) / 2;
+        const U32 x = window_width - state.board_top_left_x + x_margin;
+        Cell board[3][3]{};
+        Player player = Player::O;
+        for (U32 i = 0; i < state.board.history_count; ++i) {
+            const Coordinate coord = state.board.history[i];
+            board[coord.r][coord.c] = get_cell(player);
+            player = nott(player);
+            const U32 item_y = y + i * (item_height + item_margin);
+            const Color color = i == (state.board.history_next_index - 1) ? Color{170, 140, 120, 255} : cell_color;
+            draw_history(board, coord, x, item_y, item_width, color);
         }
     }
 
@@ -287,10 +345,6 @@ namespace mcts {
         return board.history_next_index < board.history_count;
     }
 
-    Player nott(Player p) {
-        return p == Player::O ? Player::X : Player::O;
-    }
-
     bool undo(Board& board) {
         assert(can_undo(board));
         Coordinate coord = board.history[board.history_next_index - 1];
@@ -352,6 +406,7 @@ int main() {
 
             draw_next_turn_player(state);
             draw_game_end(state);
+            draw_history(state);
         }
         EndDrawing();
     }
