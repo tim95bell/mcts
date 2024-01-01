@@ -1,63 +1,11 @@
 
+#include "util.hpp"
+#include "board.hpp"
 #include <cstdio>
 #include <cassert>
 #include <raylib.h>
 
 namespace mcts {
-    using U8 = unsigned char;
-    static_assert(sizeof(U8) == 1);
-    using U16 = unsigned short;
-    static_assert(sizeof(U16) == 2);
-    using U32 = unsigned;
-    static_assert(sizeof(U32) == 4);
-    using U64 = unsigned long long;
-    static_assert(sizeof(U64) == 8);
-
-    enum class Player {
-        O,
-        X
-    };
-
-    enum class Cell {
-        Empty,
-        O,
-        X
-    };
-
-    enum class GameEnd {
-        None,
-        Draw,
-        OWin,
-        XWin
-    };
-
-    struct Coordinate {
-        using Type = U8;
-        Coordinate() = default;
-
-        Coordinate(Type row, Type col)
-            : r(row)
-            , c(col)
-        {}
-
-        Coordinate(Type i)
-            : r(i / 3)
-            , c(i % 3)
-        {}
-
-        Type r;
-        Type c;
-    };
-
-    struct Board {
-        Player next_turn;
-        Cell cell[3][3];
-        GameEnd game_end;
-        U8 history_next_index;
-        U8 history_count;
-        Coordinate history[9];
-    };
-
     struct State {
         Board board;
         U32 board_top_left_x;
@@ -87,30 +35,6 @@ namespace mcts {
         Node* child_2;
     };
 #endif
-
-    char get_char(Cell cell) {
-        if (cell == Cell::Empty) {
-            return '.';
-        }
-
-        if (cell == Cell::X) {
-            return 'X';
-        }
-
-        assert(cell == Cell::O);
-        return 'O';
-    }
-
-    void print(const Board& board) {
-        printf("next turn: %c\n", board.next_turn == Player::X ? 'x' : 'y');
-        for (Coordinate::Type y = 0; y < 3; ++y) {
-            for (Coordinate::Type x = 0; x < 3; ++x) {
-                printf("\t%c", get_char(board.cell[y][x]));
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
 
     void init() {
         InitWindow(window_width, window_height, "TicTacToe");
@@ -155,15 +79,22 @@ namespace mcts {
         }
     }
 
-    Cell get_cell(Player player) {
-        assert(player == Player::O || player == Player::X);
-        return player == Player::O ? Cell::O : Cell::X;
-    }
-
     void draw_cell(const State& state, Coordinate coord) {
         const Vector2 pos = get_cell_screen_pos(state, coord);
         DrawRectangle(pos.x, pos.y, cell_size, cell_size, cell_color);
-        draw_piece(state, state.board.cell[coord.r][coord.c], coord);
+        Color color = piece_color;
+        if (state.board.game_end == GameEnd::OWin || state.board.game_end == GameEnd::XWin) {
+            for (U32 i = 0; i < state.board.win_cell_count; ++i) {
+                if (coord.r == state.board.win_cell[i].r && coord.c == state.board.win_cell[i].c) {
+                    color = win_color;
+                    break;
+                }
+            }
+        } else if (state.board.game_end == GameEnd::Draw) {
+            color = draw_color;
+        }
+
+        draw_piece(state, state.board.cell[coord.r][coord.c], coord, color);
     }
 
     void draw_next_turn_player(const State& state) {
@@ -190,14 +121,6 @@ namespace mcts {
         }
     }
 
-    U32 min(U32 a, U32 b) {
-        return a < b ? a : b;
-    }
-
-    U32 max(U32 a, U32 b) {
-        return a > b ? a : b;
-    }
-
     void draw_history(const Cell board[3][3], Coordinate coord, float x, float y, float size, Color cell_color) {
         const U32 margin = max((size / 3.0f) * 0.05f, 1);
         const U32 cell_size = (size - margin * 2.0f) / 3.0f;
@@ -217,10 +140,6 @@ namespace mcts {
                 }
             }
         }
-    }
-
-    Player nott(Player p) {
-        return p == Player::O ? Player::X : Player::O;
     }
 
     void draw_history(const State& state) {
@@ -254,111 +173,6 @@ namespace mcts {
                 }
             }
         }
-    }
-
-    Coordinate::Type index(Coordinate coord) {
-        return coord.c + coord.r * 3;
-    }
-
-    Cell get_cell(const Board& board, Coordinate coord) {
-        return board.cell[coord.r][coord.c];
-    }
-
-    Cell& get_cell(Board& board, Coordinate coord) {
-        return board.cell[coord.r][coord.c];
-    }
-
-    void set_cell(Board& board, Coordinate coord, Player p) {
-        board.cell[coord.r][coord.c] = get_cell(p);
-    }
-
-    GameEnd detect_win(const Board& board) {
-        // rows
-        for (U8 r = 0; r < 3; ++r) {
-            const Cell cell = get_cell(board, Coordinate{r, 0});
-            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{r, 1}) && cell == get_cell(board, Coordinate{r, 2})) {
-                assert(cell == Cell::O || cell == Cell::X);
-                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
-            }
-        }
-
-        // cols
-        for (U8 c = 0; c < 3; ++c) {
-            const Cell cell = get_cell(board, Coordinate{0, c});
-            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, c}) && cell == get_cell(board, Coordinate{2, c})) {
-                assert(cell == Cell::O || cell == Cell::X);
-                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
-            }
-        }
-
-        // diagonal 1
-        {
-            const Cell cell = get_cell(board, Coordinate{0, 0});
-            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, 1}) && cell == get_cell(board, Coordinate{2, 2})) {
-                assert(cell == Cell::O || cell == Cell::X);
-                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
-            }
-        }
-
-        // diagonal 2
-        {
-            const Cell cell = get_cell(board, Coordinate{0, 2});
-            if (cell != Cell::Empty && cell == get_cell(board, Coordinate{1, 1}) && cell == get_cell(board, Coordinate{2, 0})) {
-                assert(cell == Cell::O || cell == Cell::X);
-                return cell == Cell::O ? GameEnd::OWin : GameEnd::XWin;
-            }
-        }
-
-        return board.history_next_index < 9 ? GameEnd::None : GameEnd::Draw;
-    }
-
-    void play_move(Board& board, Coordinate coord, bool is_redo = false) {
-        if (get_cell(board, coord) == Cell::Empty) {
-            assert(board.history_next_index < 9);
-
-            set_cell(board, coord, board.next_turn);
-            if (board.next_turn == Player::O) {
-                board.next_turn = Player::X;
-            } else {
-                board.next_turn = Player::O;
-            }
-            board.history[board.history_next_index] = coord;
-            ++board.history_next_index;
-            assert(board.history_next_index <= 9);
-            if (!is_redo) {
-                board.history_count = board.history_next_index;
-            }
-        }
-
-        board.game_end = detect_win(board);
-    }
-
-    bool is_valid(Coordinate coord) {
-        return coord.r < 3 && coord.c < 3;
-    }
-
-    bool can_undo(const Board& board) {
-        return board.history_next_index > 0;
-    }
-
-    bool can_redo(const Board& board) {
-        return board.history_next_index < board.history_count;
-    }
-
-    bool undo(Board& board) {
-        assert(can_undo(board));
-        Coordinate coord = board.history[board.history_next_index - 1];
-        assert(get_cell(board, coord) != Cell::Empty);
-        get_cell(board, coord) = Cell::Empty;
-        --board.history_next_index;
-        board.game_end = GameEnd::None;
-        board.next_turn = nott(board.next_turn);
-    }
-
-    bool redo(Board& board) {
-        assert(can_redo(board));
-        Coordinate coord = board.history[board.history_next_index];
-        play_move(board, coord, true);
     }
 }
 
