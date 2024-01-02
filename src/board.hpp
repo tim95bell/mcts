@@ -42,6 +42,17 @@ namespace mcts {
         Type c;
     };
 
+    enum struct Score {
+        Draw,
+        OWins,
+        XWins
+    };
+
+    struct ScoreAndCoord {
+        Coordinate coord;
+        Score score;
+    };
+
     struct Board {
         Player next_turn;
         Cell cell[3][3];
@@ -51,6 +62,8 @@ namespace mcts {
         Coordinate history[9];
         Coordinate win_cell[6];
         U8 win_cell_count;
+        Coordinate ai_best_moves[9];
+        U8 ai_best_moves_count;
     };
 
     Cell get_cell(Player player) {
@@ -155,6 +168,7 @@ namespace mcts {
             }
             board.history[board.history_next_index] = coord;
             ++board.history_next_index;
+            board.ai_best_moves_count = 0;
             assert(board.history_next_index <= 9);
             if (!is_redo) {
                 board.history_count = board.history_next_index;
@@ -185,6 +199,7 @@ namespace mcts {
         board.game_end = GameEnd::None;
         board.next_turn = nott(board.next_turn);
         board.win_cell_count = 0;
+        board.ai_best_moves_count = 0;
     }
 
     bool redo(Board& board) {
@@ -200,76 +215,79 @@ namespace mcts {
         return result;
     }
 
-    enum struct Score {
-        Draw,
-        OWins,
-        XWins
-    };
-
-    struct ScoreAndCoord {
-        Coordinate coord;
-        Score score;
-    };
-
     Score get_score(Board& board);
 
-    ScoreAndCoord get_best_child_score(Board& board) { 
-        assert(board.game_end == GameEnd::None);
-
-        ScoreAndCoord score[9]{};
-        U8 score_count = 0;
+    U8 get_child_scores(Board& board, ScoreAndCoord result[9]) {
+        U8 count = 0;
         for (U8 i = 0; i < 9; ++i) {
             const Coordinate coord(i);
             if (get_cell(board, coord) == Cell::Empty) {
                 play_move(board, coord);
-                score[score_count] = ScoreAndCoord{coord, get_score(board)};
-                ++score_count;
+                result[count] = ScoreAndCoord{coord, get_score(board)};
+                ++count;
                 undo(board);
             }
         }
+        return count;
+    }
 
-        assert(score_count > 0);
+    U8 get_best_child_scores(Board& board, ScoreAndCoord result[9]) {
+        const U8 count = get_child_scores(board, result);
 
-        if (score_count == 1) {
-            return score[0];
+        if (count <= 1) {
+            return count;
         }
 
         const Score win_score = board.next_turn == Player::O ? Score::OWins : Score::XWins;
 
-        U8 use_score_count = 0;
-        for (U8 i = 0; i < score_count; ++i) {
-            if (score[i].score == win_score) {
-                if (i != use_score_count) {
-                    ScoreAndCoord tmp = score[use_score_count];
-                    score[use_score_count] = score[i];
-                    score[i] = tmp;
+        U8 use_count = 0;
+        for (U8 i = 0; i < count; ++i) {
+            if (result[i].score == win_score) {
+                if (i != use_count) {
+                    ScoreAndCoord tmp = result[use_count];
+                    result[use_count] = result[i];
+                    result[i] = tmp;
                 }
-                ++use_score_count;
+                ++use_count;
             }
         }
 
-        if (use_score_count == 0) {
-            for (U8 i = 0; i < score_count; ++i) {
-                if (score[i].score == Score::Draw) {
-                    if (i != use_score_count) {
-                        score[use_score_count] = score[i];
+        if (use_count == 0) {
+            for (U8 i = 0; i < count; ++i) {
+                if (result[i].score == Score::Draw) {
+                    if (i != use_count) {
+                        result[use_count] = result[i];
                     }
-                    ++use_score_count;
+                    ++use_count;
                 }
             }
         }
 
-        if (use_score_count == 0) {
-            use_score_count = score_count;
+        if (use_count == 0) {
+            use_count = count;
         }
 
-        assert(use_score_count > 0);
+        return use_count;
+    }
 
-        if (use_score_count == 1) {
+    U8 get_best_child_moves(Board& board, Coordinate result[9]) {
+        ScoreAndCoord scores[9];
+        const U8 count = get_best_child_scores(board, scores);
+        for (U8 i = 0; i < count; ++i) {
+            result[i] = scores[i].coord;
+        }
+        return count;
+    }
+
+    ScoreAndCoord get_best_child_score(Board& board) { 
+        ScoreAndCoord score[9]{};
+        const U8 count = get_best_child_scores(board, score);
+
+        if (count == 1) {
             return score[0];
         }
 
-        const U8 index = random(0, use_score_count);
+        const U8 index = random(0, count);
         return score[index];
     }
 
@@ -291,12 +309,25 @@ namespace mcts {
         return get_best_child_score(board).score;
     }
 
-    Coordinate get_ai_move(Board& board) {
-        return get_best_child_score(board).coord;
+    void generate_ai_moves(Board& board) {
+        const U8 history_count_copy = board.history_count;
+        Coordinate history_copy[9];
+        for (U8 i = 0; i < history_count_copy; ++i) {
+            history_copy[i] = board.history[i];
+        }
+
+        board.ai_best_moves_count = get_best_child_moves(board, board.ai_best_moves);
+
+        board.history_count = history_count_copy;
+        for (U8 i = 0; i < history_count_copy; ++i) {
+            board.history[i] = history_copy[i];
+        }
     }
 
-    void ai_move(Board& board) {
-        const Coordinate coord = get_ai_move(board);
+    void play_ai_move(Board& board) {
+        assert(board.ai_best_moves_count > 0);
+        const U8 index = random(0, board.ai_best_moves_count);
+        const Coordinate coord = board.ai_best_moves[index];
         play_move(board, coord);
     }
 }

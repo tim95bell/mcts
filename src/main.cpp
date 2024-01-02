@@ -82,19 +82,39 @@ namespace mcts {
     void draw_cell(const State& state, Coordinate coord) {
         const Vector2 pos = get_cell_screen_pos(state, coord);
         DrawRectangle(pos.x, pos.y, cell_size, cell_size, cell_color);
-        Color color = piece_color;
-        if (state.board.game_end == GameEnd::OWin || state.board.game_end == GameEnd::XWin) {
-            for (U32 i = 0; i < state.board.win_cell_count; ++i) {
-                if (coord.r == state.board.win_cell[i].r && coord.c == state.board.win_cell[i].c) {
-                    color = win_color;
+
+        if (get_cell(state.board, coord) == Cell::Empty) {
+            bool is_ai_best_move = false;
+            for (U8 i = 0; i < state.board.ai_best_moves_count; ++i) {
+                if (state.board.ai_best_moves[i].r == coord.r && state.board.ai_best_moves[i].c == coord.c) {
+                    is_ai_best_move = true;
                     break;
                 }
             }
-        } else if (state.board.game_end == GameEnd::Draw) {
-            color = draw_color;
-        }
 
-        draw_piece(state, state.board.cell[coord.r][coord.c], coord, color);
+            if (is_ai_best_move) {
+                const Color color{piece_color.r, piece_color.g, piece_color.b, 65};
+                if (state.board.next_turn == Player::O) {
+                    draw_o(state, coord, color);
+                } else {
+                    draw_x(state, coord, color);
+                }
+            }
+        } else {
+            Color color = piece_color;
+            if (state.board.game_end == GameEnd::OWin || state.board.game_end == GameEnd::XWin) {
+                for (U32 i = 0; i < state.board.win_cell_count; ++i) {
+                    if (coord.r == state.board.win_cell[i].r && coord.c == state.board.win_cell[i].c) {
+                        color = win_color;
+                        break;
+                    }
+                }
+            } else if (state.board.game_end == GameEnd::Draw) {
+                color = draw_color;
+            }
+
+            draw_piece(state, state.board.cell[coord.r][coord.c], coord, color);
+        }
     }
 
     void draw_next_turn_player(const State& state) {
@@ -206,8 +226,10 @@ int main() {
                 redo(state.board);
             }
         } else if (IsKeyPressed(KEY_DOWN)) {
-            if (state.board.game_end == GameEnd::None) {
-                ai_move(state.board);
+            if (state.board.ai_best_moves_count == 0) {
+                generate_ai_moves(state.board);
+            } else {
+                play_ai_move(state.board);
             }
         }
 
