@@ -218,6 +218,7 @@ namespace mcts {
     Score get_score(Board& board);
 
     U8 get_child_scores(Board& board, ScoreAndCoord result[9]) {
+        assert(board.game_end == GameEnd::None);
         U8 count = 0;
         for (U8 i = 0; i < 9; ++i) {
             const Coordinate coord(i);
@@ -310,6 +311,10 @@ namespace mcts {
     }
 
     void generate_ai_moves(Board& board) {
+        if (board.game_end != GameEnd::None) {
+            return;
+        }
+        
         const U8 history_count_copy = board.history_count;
         Coordinate history_copy[9];
         for (U8 i = 0; i < history_count_copy; ++i) {
