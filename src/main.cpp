@@ -24,7 +24,6 @@ namespace mcts {
     static const Color piece_color = background_color;
     static const Color win_color{50, 150, 50, 255};
     static const Color draw_color{150, 150, 50, 255};
-    static Player human = Player::X;
 
 #if 0
     struct Node {
@@ -189,12 +188,10 @@ int main() {
 
     while (!WindowShouldClose()) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (state.board.game_end == GameEnd::None && state.board.next_turn == human) {
-                const Vector2 pos = GetMousePosition();
-                const Coordinate coord = get_cell_for_screen_pos(state, pos);
-                if (is_valid(coord)) {
-                    play_move(state.board, coord);
-                }
+            const Vector2 pos = GetMousePosition();
+            const Coordinate coord = get_cell_for_screen_pos(state, pos);
+            if (is_valid(coord)) {
+                play_move(state.board, coord);
             }
         }
 
@@ -209,7 +206,7 @@ int main() {
                 redo(state.board);
             }
         } else if (IsKeyPressed(KEY_DOWN)) {
-            if (state.board.game_end == GameEnd::None && state.board.next_turn != human) {
+            if (state.board.game_end == GameEnd::None) {
                 ai_move(state.board);
             }
         }
