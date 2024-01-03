@@ -24,10 +24,22 @@ target_link_libraries(raylib_release INTERFACE "-framework iokit" "-framework co
 # endregion raylib
 
 set(source_files src/main.cpp)
-set(header_files)
+set(non_build_source_files
+    src/engine.cpp
+    src/mcts.cpp
+    src/tree_search.cpp
+    src/ui.cpp
+)
+set(header_files
+    src/engine.hpp
+    src/mcts.hpp
+    src/tree_search.hpp
+    src/ui.hpp
+    src/util.hpp
+)
 add_executable("${PROJECT_NAME}" ${source_files})
 target_link_libraries("${PROJECT_NAME}" PRIVATE debug raylib_debug optimized raylib_release)
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${source_files} ${header_files})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${source_files} ${non_build_source_files} ${header_files})
 
 if(APPLE)
     set_target_properties("${PROJECT_NAME}" PROPERTIES XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH[variant=Debug] YES)
