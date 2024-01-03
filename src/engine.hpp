@@ -52,7 +52,7 @@ namespace engine {
     };
 
     Cell get_cell(Player player);
-    Player nott(Player p); 
+    Player other(Player p); 
     Coordinate::Type index(Coordinate coord);
     Cell get_cell(const Board& board, Coordinate coord);
     Cell& get_cell(Board& board, Coordinate coord);

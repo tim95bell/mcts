@@ -9,7 +9,7 @@
 
 #define SEARCH_TYPE_MCTS 0
 #define SEARCH_TYPE_TREE 1
-#define SEARCH_TYPE SEARCH_TYPE_TREE
+#define SEARCH_TYPE SEARCH_TYPE_MCTS
 static_assert(SEARCH_TYPE == SEARCH_TYPE_MCTS || SEARCH_TYPE == SEARCH_TYPE_TREE);
 
 namespace tic_tac_toe {
@@ -174,7 +174,7 @@ namespace ui {
         for (U32 i = 0; i < state.board.history_count; ++i) {
             const engine::Coordinate coord = state.board.history[i];
             board[coord.r][coord.c] = engine::get_cell(player);
-            player = engine::nott(player);
+            player = engine::other(player);
             const U32 item_y = y + i * (item_height + item_margin);
             const Color color = i == (state.board.history_next_index - 1) ? Color{170, 140, 120, 255} : cell_color;
             draw_history(board, coord, x, item_y, item_width, color);

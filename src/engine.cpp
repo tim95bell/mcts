@@ -20,7 +20,7 @@ namespace engine {
         return player == Player::O ? Cell::O : Cell::X;
     }
 
-    Player nott(Player p) {
+    Player other(Player p) {
         return p == Player::O ? Player::X : Player::O;
     }
 
@@ -150,7 +150,7 @@ namespace engine {
         get_cell(board, coord) = Cell::Empty;
         --board.history_next_index;
         board.game_end = GameEnd::None;
-        board.next_turn = nott(board.next_turn);
+        board.next_turn = other(board.next_turn);
         board.win_cell_count = 0;
         board.ai_best_moves_count = 0;
     }
