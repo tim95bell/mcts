@@ -47,30 +47,26 @@ namespace mcts {
         return score / visit_count + c * sqrt(log(parent_visit_count) / visit_count);
     }
 
-    template <typename ValueFunction>
-    static Node* random_child_with_highest_value(Node& node, ValueFunction value_function) {
+    static Node* random_child_with_highest_value(Node& node, int (*comparator_function)(const Node& a, const Node& b)) {
         if (node.children_count == 0) {
             return nullptr;
         }
 
-        double highest_value;
         U8 highest_count = 1;
         U8 highest_indices[9];
 
         {
             Node& child = *node.children[0];
-            highest_value = value_function(child);
             highest_indices[0] = 0;
         }
 
         for (U8 i = 1; i < node.children_count; ++i) {
-            Node& child = *node.children[i];
-            const double value = value_function(child);
-            if (value > highest_value) {
-                highest_value = value;
+            const Node& child = *node.children[i];
+            const int compare_result = comparator_function(*node.children[highest_indices[0]], child);
+            if (compare_result > 0) {
                 highest_count = 1;
                 highest_indices[0] = i;
-            } else if (value == highest_value) {
+            } else if (compare_result == 0) {
                 highest_indices[highest_count] = i;
                 ++highest_count;
             }
@@ -83,30 +79,27 @@ namespace mcts {
         return node.children[highest_indices[index]];
     }
     
-    template <typename ResultType, typename ValueType>
-    static U8 children_with_highest_value(Node& node, ResultType result[9], ValueType (*value_function)(Node& child), ResultType (*child_to_result)(Node& child)) {
+    template <typename ResultType>
+    static U8 children_with_highest_value(Node& node, ResultType result[9], int (*comparator_function)(const Node& a, const Node& b), ResultType (*child_to_result)(Node& child)) {
         if (node.children_count == 0) {
             return 0;
         }
 
-        ValueType highest_value;
         U8 highest_count = 1;
         U8 highest_indices[9];
 
         {
             Node& child = *node.children[0];
-            highest_value = value_function(child);
             highest_indices[0] = 0;
         }
 
         for (U8 i = 1; i < node.children_count; ++i) {
-            Node& child = *node.children[i];
-            const ValueType value = value_function(child);
-            if (value > highest_value) {
-                highest_value = value;
+            const Node& child = *node.children[i];
+            const int compare_result = comparator_function(*node.children[highest_indices[0]], child);
+            if (compare_result > 0) {
                 highest_count = 1;
                 highest_indices[0] = i;
-            } else if (value == highest_value) {
+            } else if (compare_result == 0) {
                 highest_indices[highest_count] = i;
                 ++highest_count;
             }
@@ -176,8 +169,11 @@ namespace mcts {
         }
 
         {
-            Node* child = random_child_with_highest_value(node, [](Node& child) {
-                return uct(child.score, child.visit_count, child.parent->visit_count);
+            Node* child = random_child_with_highest_value(node, [](const Node& a, const Node& b) {
+                assert(a.parent != nullptr);
+                assert(a.parent == b.parent);
+                const double result = uct(b.score, b.visit_count, b.parent->visit_count) - uct(a.score, a.visit_count, a.parent->visit_count);
+                return (result < 0) ? -1 : (result > 0) ? 1 : 0;
             });
 
             assert(child);
@@ -260,8 +256,9 @@ namespace mcts {
 
         assert(root_node.children_count > 0);
 
-        board.ai_best_moves_count = children_with_highest_value<engine::Coordinate, double>(root_node, board.ai_best_moves, [](Node& child) {
-            return child.visit_count;
+        board.ai_best_moves_count = children_with_highest_value<engine::Coordinate>(root_node, board.ai_best_moves, [](const Node& a, const Node& b) {
+            const double result = b.visit_count - a.visit_count;
+            return (result < 0) ? -1 : (result > 0) ? 1 : 0;
         }, [](Node& child) {
             return child.coord;
         });
