@@ -47,7 +47,13 @@ namespace mcts {
         return score / visit_count + c * sqrt(log(parent_visit_count) / visit_count);
     }
 
-    static Node* random_child_with_highest_value(Node& node, int (*comparator_function)(const Node& a, const Node& b)) {
+    enum struct SelectChildHandleWithHighestValue_CollisionResolutionStrategy {
+        None,
+        Random
+    };
+
+    template <SelectChildHandleWithHighestValue_CollisionResolutionStrategy CollisionResolutionStrategy>
+    static Node* select_child_with_highest_value(Node& node, int (*comparator_function)(const Node& a, const Node& b)) {
         if (node.children_count == 0) {
             return nullptr;
         }
@@ -73,10 +79,19 @@ namespace mcts {
         }
 
         assert(highest_count > 0);
-        const U8 index = highest_count == 1 ? 0 : util::random(0, highest_count);
 
-        assert(highest_indices[index] < node.children_count);
-        return node.children[highest_indices[index]];
+        if constexpr (CollisionResolutionStrategy == SelectChildHandleWithHighestValue_CollisionResolutionStrategy::Random) {
+            const U8 index = highest_count == 1 ? 0 : util::random(0, highest_count);
+
+            assert(highest_indices[index] < node.children_count);
+            return node.children[highest_indices[index]];
+        } else {
+            if (highest_count == 1) {
+                return node.children[highest_indices[0]];
+            }
+
+            return nullptr;
+        }
     }
     
     template <typename ResultType>
@@ -169,7 +184,8 @@ namespace mcts {
         }
 
         {
-            Node* child = random_child_with_highest_value(node, [](const Node& a, const Node& b) {
+            Node* child = select_child_with_highest_value
+            <SelectChildHandleWithHighestValue_CollisionResolutionStrategy::Random>(node, [](const Node& a, const Node& b) {
                 assert(a.parent != nullptr);
                 assert(a.parent == b.parent);
                 const double result = uct(b.score, b.visit_count, b.parent->visit_count) - uct(a.score, a.visit_count, a.parent->visit_count);
@@ -228,6 +244,8 @@ namespace mcts {
     }
 
     void generate_computer_moves(engine::Board& board) {
+        static constexpr U32 count = 100 * 1000;
+
         if (board.game_end != engine::GameEnd::None) {
             return;
         }
@@ -238,27 +256,58 @@ namespace mcts {
         Node root_node{};
         root_node.perspective = board.next_turn;
 
-        for (U32 i = 0; i < 1000 * 100; ++i) {
+        for (U32 i = 0; i < count; ++i) {
             Node& node = select(board, root_node);
             const engine::GameEnd result = simulate(board);
             backprop(node, result);
             memcpy(&board, &board_copy, sizeof(board));
         }
 
-        // do one more iteration but skip simulation and the outcome of the simulation is irrelevant.
-        // because the score result of the last iteration is ignored anyway.
-        // since the best move is selected purely on visit count.
-        {
+        for (U32 i = 0; i < count; ++i) {
             Node& node = select(board, root_node);
-            backprop(node, engine::GameEnd::Draw);
+            const engine::GameEnd result = simulate(board);
+            backprop(node, result);
             memcpy(&board, &board_copy, sizeof(board));
+
+            const Node* result_node = select_child_with_highest_value<SelectChildHandleWithHighestValue_CollisionResolutionStrategy::None>(root_node, [](const Node& a, const Node& b) {
+                const double result = b.visit_count - a.visit_count;
+                if (result == 0) {
+                    assert(a.visit_count == b.visit_count);
+                    if (a.visit_count != 0) {
+                        assert(a.visit_count != 0);
+                        const double result_2 = b.score - a.score;
+                        return (result_2 < 0) ? -1 : (result_2 > 0) ? 1 : 0;
+                    }
+
+                    return 0;
+                }
+
+                return (result < 0) ? -1 : 1;
+            });
+
+            if (result_node) {
+                board.ai_best_moves_count = 1;
+                board.ai_best_moves[0] = result_node->coord;
+                return;
+            }
         }
 
         assert(root_node.children_count > 0);
 
         board.ai_best_moves_count = children_with_highest_value<engine::Coordinate>(root_node, board.ai_best_moves, [](const Node& a, const Node& b) {
             const double result = b.visit_count - a.visit_count;
-            return (result < 0) ? -1 : (result > 0) ? 1 : 0;
+            if (result == 0) {
+                assert(a.visit_count == b.visit_count);
+                if (a.visit_count != 0) {
+                    assert(a.visit_count != 0);
+                    const double result_2 = b.score - a.score;
+                    return (result_2 < 0) ? -1 : (result_2 > 0) ? 1 : 0;
+                }
+
+                return 0;
+            }
+
+            return (result < 0) ? -1 : 1;
         }, [](Node& child) {
             return child.coord;
         });
